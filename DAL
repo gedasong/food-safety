@@ -1,0 +1,38 @@
+#####此程序用于对数据的直接处理，包括数据的提取，数据的运算，以及数据的存储
+#####This program file is designed for the direct process of the data, including the data extraction,
+#####data processing and data saving.
+
+import matplotlib.pyplot as plt
+import numpy as np
+
+
+
+
+from wordcloud import WordCloud
+
+import jieba
+jieba.set_dictionary(".\dict.txt")
+jieba.initialize()
+
+
+class dal():
+
+
+
+    #region Text
+    def word_cloud(data,para):
+        #text_from_file_with_apath = open(file_path).read()
+        wordlist_after_jieba = jieba.cut(data, cut_all=True)
+        wl_space_split = " ".join(wordlist_after_jieba)
+
+        my_wordcloud = WordCloud(font_path='c:\windows\Fonts\simhei.ttf',mask=para["mask"],scale=para["scale"],
+                                 max_words=para["max_words"],min_font_size=para["min_font_size"],
+                                 max_font_size=para["max_font_size"],background_color=para["background_color"],
+                                 font_step=para["font_step"]).generate(wl_space_split)
+        return my_wordcloud
+
+    #endregion
+
+    #region Image
+
+    #endregion
