@@ -1,0 +1,913 @@
+from ele import Ui_MainWindow
+from DAL import dal
+import os
+import pandas as pd
+from PIL import Image
+
+from scipy.misc import imread
+
+from PyQt5.QtWidgets import *
+from PyQt5.QtGui import *
+from PyQt5.QtCore import *
+from PyQt5 import QtCore, QtGui, QtWidgets
+from PyQt5.QtWidgets import QMessageBox,QDialog
+
+import matplotlib.pyplot as plt
+import seaborn as sns
+import matplotlib
+
+
+from pymongo import MongoClient
+import pandas as pd
+
+from snownlp import SnowNLP
+import numpy as np
+
+import PyQt5.sip
+
+class bll(QtWidgets.QMainWindow,Ui_MainWindow):
+    def __init__(self,parent=None):
+
+        super(bll,self).__init__(parent)
+        self.setupUi(self)
+
+        #region 基本设置
+
+        #region Menu
+        self.actionSettings.triggered.connect(self.data_setting_display)#################data_setting
+        #self.actionPlot_Settings.triggered.connect(self.plot_setting_display)############plot_setting
+        #endregion
+
+        #region Settingbox
+        self.frame_setting.setVisible(True)
+        self.scrollArea.setVisible(True)
+        self.close_setting.clicked.connect(self.close_setting_func)
+        ######data_setting   
+        self.pushbutton_data_select.clicked.connect(self.select_data_file)
+        self.pushbutton_data_biaoge.clicked.connect(self.table_display)
+        self.pushbutton_safe_analysis.clicked.connect(self.safe_analysis)
+        self.pushbutton_comment.clicked.connect(self.comment_display)
+        self.produce_cloud_map.clicked.connect(self.produce_cloud_map_func)
+        self.pushbutton_score.clicked.connect(self.score_display)
+        self.pushbutton_top20.clicked.connect(self.top20_display)
+        self.pushbutton_bottom20.clicked.connect(self.bottom20_display)
+        self.pushbutton_comment_top20.clicked.connect(self.comment_top20)
+        self.pushbutton_comment_bottom20.clicked.connect(self.comment_bottom20)
+        self.produce_cloud_top20.clicked.connect(self.cloud_top20)
+        self.produce_cloud_bottom20.clicked.connect(self.cloud_bottom20)
+        # endregion
+
+        #region Display
+        self.tabWidget_display.setCurrentIndex(1)#######初始显示Figure界面
+        #endregion
+
+        #endregion
+
+
+
+    #region  数据文件选取
+    def select_data_file(self):
+        try:
+            import ele_extract
+            QtWidgets.QMessageBox.information(self.pushbutton_data_import, "info", "数据存储完毕")
+        except Exception as e:
+            QMessageBox.information(self.pushbutton_safe_analysis,"info",str(e))
+
+
+    #endregion
+
+    #region table显示
+    def table_display(self):
+        try:
+            client = MongoClient(host='127.0.0.1', port=27017)
+            db = client.eleme  # 给数据库命名
+            collection = db.eleme_page
+
+            key = [ 'shopid', 'shopname', 'rating', 'recent_order_num', 'opening_hours', 'address',
+                   'flavors_id', 'flavors_name'
+                , 'minimum_order_amount', 'delivery_fee', 'distance', 'order_lead_time', 'support_tags',
+                   'recommend_reasons', 'recommend'
+                , 'description', 'promotion_info', 'phone', 'folding_restaurant_brand', 'folding_restaurants_id',
+                   'folding_restaurants_name']
+
+            data = []
+            check=self.check_csv.isChecked()
+            if (check):
+                data=pd.read_csv('data\eleme_page.csv')
+                del data['authentic_id']
+            else:
+                for item in collection.find():
+                    list = []
+                    for k in range(len(key)):
+                        if key[k] in item:
+                            list.append(item[key[k]])
+                    data.append(list)
+                data=pd.DataFrame(data)
+            [rows,columns]=[len(data),len(data.columns)]
+            print(data)
+            title_name = []
+            for i in range(len(data.columns)):
+                title_name.append(key[i])
+            self.tableWidget.setColumnCount(columns)
+            self.tableWidget.setRowCount(rows)
+            self.tableWidget.setHorizontalHeaderLabels(title_name)
+            self.tabWidget_display.setCurrentIndex(0)
+
+            for i in range(0,rows):
+                for j in range(0,columns):
+                    self.tableWidget.setItem(i, j, QTableWidgetItem(str(data.iloc[i][j])))
+        except Exception as e:
+            QMessageBox.information(self.pushbutton_safe_analysis,"info",str(e))
+
+    #endregion
+
+    #region 得分情况
+    def score_display(self):
+        try:
+            client = MongoClient(host='127.0.0.1', port=27017)
+            db = client.eleme  # 给数据库命名
+            collection = db.eleme_page
+
+            key = ['shopid', 'shopname','address','score']
+
+            data = []
+            if self.check_csv.isChecked():
+                data=pd.read_csv('data\eleme_page_score.csv')
+                data=data[key]
+            else:
+                for item in collection.find():
+                    list = []
+                    for k in range(len(key)):
+                        if key[k] in item:
+                            list.append(item[key[k]])
+                    data.append(list)
+                data = pd.DataFrame(data)
+            [rows, columns] = [len(data), len(data.columns)]
+            title_name = []
+            for i in range(len(data.columns)):
+                title_name.append(key[i])
+            self.tableWidget.setColumnCount(columns)
+            self.tableWidget.setRowCount(rows)
+            self.tableWidget.setHorizontalHeaderLabels(title_name)
+            self.tabWidget_display.setCurrentIndex(0)
+
+            for i in range(0, rows):
+                for j in range(0, columns):
+                    self.tableWidget.setItem(i, j, QTableWidgetItem(str(data.iloc[i][j])))
+        except Exception as e:
+            QMessageBox.information(self.pushbutton_safe_analysis,"info",str(e))
+
+
+    #endregion
+
+    #region 评论显示
+    def comment_display(self):
+        try:
+            if self.check_csv.isChecked():
+                data = pd.read_csv('data\eleme_comment.csv')
+                data_page= pd.read_csv('data\eleme_page.csv')
+                report_str=''
+                for d in range(len(data)):
+                    content=data['content'].iloc[d]
+                    shop_name=data_page['shopname'].iloc[d]
+                    str0 = []
+                    str1 = ''
+                    for i in range(len(content)):
+                        if content[i] == '\'':
+                            if (str1!='[') and (str1!=', '):
+                                str0.append(str1)
+                            str1 = ''
+                        else:
+                            str1 += content[i]
+                    content=str0
+
+                    report_str += str(d) + '号店' + '\n'
+                    report_str += '店名：' + shop_name + '\n'
+
+                    if len(content) == 0:
+                        report_str += '该店无用户评论\n'
+                    else:
+                        for i in range(len(content)):
+
+                            report_str += '**用户' + str(i + 1) + '评论：' + content[i] + '\n'
+
+            else:
+                client = MongoClient(host='127.0.0.1', port=27017)
+                db = client.eleme  # 给数据库命名
+                collection = db.eleme_page
+                shop_name = []
+                for item in collection.find():
+                    shop_name.append(item['shopname'])
+
+                collection = db.eleme_comment
+                report_str = ''
+                count = 0
+                for item in collection.find():
+                    report_str += str(count) + '号店' + '\n'
+                    report_str += '店名：' + shop_name[count] + '\n'
+                    content = item['content']
+                    if len(content) == 0:
+                        report_str += '该店无用户评论\n'
+                    else:
+                        for i in range(len(content)):
+                            report_str += '**用户' + str(i + 1) + '评论：' + content[i] + '\n'
+                    count += 1
+
+            self.textEdit_report.setText(report_str)
+
+            self.tabWidget_display.setCurrentIndex(2)
+        except Exception as e:
+            QMessageBox.information(self.pushbutton_safe_analysis,"info",str(e))
+    #endregion
+
+    #region 前20评论
+    def comment_top20(self):
+        try:
+
+            shop_name=self.comboBox_top20.currentText()
+            shop_id=shop_name.split(' ')[-1]
+            if self.check_csv.isChecked():
+                data=pd.read_csv('data\eleme_comment.csv')
+                content=data[data['shopid']==shop_id]['content'].iloc[0]
+                print(content)
+                str0 = []
+                str1 = ''
+                for i in range(len(content)):
+                    if content[i] == '\'':
+                        if (str1 != '[') and (str1 != ', '):
+                            str0.append(str1)
+                        str1 = ''
+                    else:
+                        str1 += content[i]
+                content = []
+                content = str0
+            else:
+                client = MongoClient(host='127.0.0.1', port=27017)
+                db = client.eleme  # 给数据库命名
+                collection = db.eleme_comment
+                content=[]
+                for item in collection.find({'shopid':shop_id}):
+                    content=item['content']
+
+
+            report_str=''
+            for i in range(len(content)):
+
+                report_str += '**用户' + str(i + 1) + '评论：' + content[i] + '\n'
+
+            self.textEdit_report.setText(report_str)
+
+            self.tabWidget_display.setCurrentIndex(2)
+        except Exception as e:
+            QMessageBox.information(self.pushbutton_safe_analysis,"info",str(e))
+    #endregion
+    #endregion
+
+    # region 后20评论
+    def comment_bottom20(self):
+        try:
+
+            shop_name = self.comboBox_bottom20.currentText()
+            shop_id = shop_name.split(' ')[-1]
+            if self.check_csv.isChecked():
+                data=pd.read_csv('data\eleme_comment.csv')
+                content=data[data['shopid']==shop_id]['content'].iloc[0]
+                print(content)
+                str0 = []
+                str1 = ''
+                for i in range(len(content)):
+                    if content[i] == '\'':
+                        if (str1 != '[') and (str1 != ', '):
+                            str0.append(str1)
+                        str1 = ''
+                    else:
+                        str1 += content[i]
+                content = []
+                content = str0
+            else:
+                client = MongoClient(host='127.0.0.1', port=27017)
+                db = client.eleme  # 给数据库命名
+                collection = db.eleme_comment
+                content=[]
+                for item in collection.find({'shopid':shop_id}):
+                    content=item['content']
+
+            report_str = ''
+            for i in range(len(content)):
+                report_str += '**用户' + str(i + 1) + '评论：' + content[i] + '\n'
+
+            self.textEdit_report.setText(report_str)
+
+            self.tabWidget_display.setCurrentIndex(2)
+        except Exception as e:
+            QMessageBox.information(self.pushbutton_safe_analysis,"info",str(e))
+        # endregion
+
+    # endregion
+
+    #region 安全分析
+    def safe_analysis(self):
+        try:
+            client = MongoClient(host='127.0.0.1', port=27017)
+            db = client.eleme  # 给数据库命名
+            collection = db.eleme_comment  # 创建数据表
+            collection1 = db.eleme_page  # 创建数据表
+
+            # cursor = collection.find({"content": {"$elemMatch": {"$ne": ""}}}, {"content": 1, "_id": 0})
+            cursor = collection.find()
+            count = 0
+            list = []
+            score = []
+            count=0
+            if self.check_csv.isChecked():
+                comment=pd.read_csv('data\eleme_comment.csv')
+                score0=[]
+                for i in range(len(comment)):
+                    shopid=comment['shopid'].iloc[i]
+                    content=comment['content'].iloc[i]
+                    #print('content')
+                    #print(content)
+                    content0=[]
+                    list=[]
+                    str1=[]
+                    str0=''
+
+                    for c in range(len(content)):
+                        if content[c]=='\'':
+                            str1.append(str0)
+                            str0=''
+                        else:
+                            str0+=content[c]
+                    content=[]
+                    content=str1
+                    #print('改后content')
+                    #print(content)
+
+                    for j in range(len(content)):
+                        #print(j)
+                        #print(content[j])
+                        if ('卫生' in content[j]) or ('肚子' in content[j]) or ('安全' in content[j]) or ('地沟油' in content[j]) or (
+                                '医院' in content[j]) or ('不舒服' in content[j]) or ('变质' in content[j]) or (
+                                '保质期' in content[j]) or ('健康' in content[j]):
+                            content0.append(content[j])
+                            #print('content0')
+                            #print(content0)
+                    if len(content0) != 0:
+                        sentiments_list = [SnowNLP(text).sentiments for text in content0]
+
+                        s = np.mean(sentiments_list)
+                        list.append(shopid)
+                        list.append(s)
+                        score.append(list)
+                        score0.append(s)
+                    else:
+                        score0.append('暂无得分')
+                #print(score0)
+                page=pd.read_csv('data\eleme_page.csv')
+                page['score']=score0
+                page.to_csv('data\eleme_page_score.csv')
+            else:
+                for item in cursor:
+                    content = item['content']
+                    content0 = []
+                    list=[]
+                    shopid=item['shopid']
+                    for i in range(len(content)):
+                        if ('卫生' in content[i]) or ('肚子' in content[i]) or ('安全' in content[i]) or ('地沟油' in content[i]) or (
+                                '医院' in content[i]) or ('不舒服' in content[i]) or ('变质' in content[i]) or (
+                                '保质期' in content[i]) or ('健康' in content[i]):
+                            content0.append(content[i])
+
+                    if len(content0)!=0:
+                        sentiments_list = [SnowNLP(text).sentiments for text in content0]
+
+                        s=np.mean(sentiments_list)
+                        list.append(shopid)
+                        list.append(s)
+                        score.append(list)
+
+                    else:
+                        collection1.update_one({'shopid': shopid}, {'$set': {'score': '暂无得分'}})
+
+
+
+            score=pd.DataFrame(score,columns=['id','score'])
+
+            sns.set_style('darkgrid')
+            plt.rcParams['font.sans-serif']=['SimHei']
+            plt.rcParams['axes.unicode_minus'] = False
+
+            plt.figure(figsize=(8, 6))
+            plt.bar(np.arange(len(score)), score['score'])
+            plt.xlabel('外卖店号')
+            plt.ylabel('食品安全得分')
+
+
+            plt.savefig("image\\image0.png")
+            plt.show()
+            image_path = "image\\image0.png"
+            im = Image.open(image_path)
+
+            w_image = im.size[0]
+            h_image = im.size[1]
+            print(w_image)
+            print(h_image)
+            # self.label_image.setGeometry(QtCore.QRect((self.frame_display.width()-w_image) / 2, (self.frame_display.height()-h_image) / 2, w_image,h_image))
+            print("width" + str(self.frame_display.width()))
+            print("f_w" + str(self.frame_display.frameWidth()))
+            # self.label_image.resize(w_image*2,h_image*2)
+            # self.label_image.setStyleSheet("background-color: rgb(0, 255, 0);")
+            png = QtGui.QPixmap("image\\image0.png")
+            png.scaled(QSize(100, 100), Qt.KeepAspectRatio)
+            self.label_image.setPixmap(png)
+            self.label_image.setAlignment(Qt.AlignCenter)
+
+            self.tabWidget_display.setCurrentIndex(1)
+        except Exception as e:
+            QMessageBox.information(self.pushbutton_safe_analysis,"info",str(e))
+
+    #endregion
+
+    #region Top20图形显示
+    def top20_display(self):
+        try:
+
+            if self.check_csv.isChecked():
+                data=pd.read_csv('data\eleme_page_score.csv')
+                key=['shopid','shopname', 'score']
+                data0=[]
+                for i in range(len(data)):
+                    if data['score'].iloc[i]!='暂无得分':
+                        list=[]
+                        list.append(data['shopid'].iloc[i])
+                        list.append(data['shopname'].iloc[i])
+                        list.append(float(data['score'].iloc[i]))
+                        data0.append(list)
+                data=data0
+            else:
+                client = MongoClient(host='127.0.0.1', port=27017)
+                db = client.eleme  # 给数据库命名
+                collection = db.eleme_page
+                data = []
+                for item in collection.find({'score': {"$exists": 1}}):
+                    if (item['score'] != '暂无得分'):
+                        list = []
+                        list.append(item['shopid'])
+                        list.append(item['shopname'])
+                        list.append(item['score'])
+                        data.append(list)
+
+            data = pd.DataFrame(data, columns=['shopid','shopname', 'score'])
+            print(data)
+            data_sort = data.sort_values(by='score', ascending=False)
+            top20 = data_sort.iloc[0:20]
+            #####加到下拉列表里
+            comb=[]
+            for i in range(len(top20)):
+                comb.append(top20['shopname'].iloc[i]+' '+str(top20['shopid'].iloc[i]))
+            self.comboBox_top20.addItems(comb)
+            plt.figure(figsize=(8, 4))
+            plt.bar(np.arange(len(top20)), top20['score'])
+            plt.xticks(np.arange(len(top20)))
+            plt.xlabel('外卖店号')
+            plt.ylabel('安全得分')
+            for i in range(len(top20)):
+                sc=top20['score'].iloc[i]
+                sc1=float('%.2f' % sc)
+                plt.text(20, 1 - i * 0.05, str(i) + ':  ' + top20['shopname'].iloc[i] + '  ' + str(sc1) + '分', color='red')
+            plt.savefig("image\\image0.png")
+            plt.show()
+            image_path = "image\\image0.png"
+            im = Image.open(image_path)
+
+            w_image = im.size[0]
+            h_image = im.size[1]
+            print(w_image)
+            print(h_image)
+            # self.label_image.setGeometry(QtCore.QRect((self.frame_display.width()-w_image) / 2, (self.frame_display.height()-h_image) / 2, w_image,h_image))
+            print("width" + str(self.frame_display.width()))
+            print("f_w" + str(self.frame_display.frameWidth()))
+            # self.label_image.resize(w_image*2,h_image*2)
+            # self.label_image.setStyleSheet("background-color: rgb(0, 255, 0);")
+            png = QtGui.QPixmap("image\\image0.png")
+            png.scaled(QSize(100, 100), Qt.KeepAspectRatio)
+            self.label_image.setPixmap(png)
+            self.label_image.setAlignment(Qt.AlignCenter)
+
+            self.tabWidget_display.setCurrentIndex(1)
+        except Exception as e:
+            QMessageBox.information(self.pushbutton_safe_analysis,"info",str(e))
+
+
+
+    #endregion
+
+    #region Bottom20图形显示
+    def bottom20_display(self):
+        try:
+
+            if self.check_csv.isChecked():
+                data=pd.read_csv('data\eleme_page_score.csv')
+                key = ['shopid', 'shopname', 'score']
+                data0 = []
+                for i in range(len(data)):
+                    if data['score'].iloc[i] != '暂无得分':
+                        list = []
+                        list.append(data['shopid'].iloc[i])
+                        list.append(data['shopname'].iloc[i])
+                        list.append(float(data['score'].iloc[i]))
+                        data0.append(list)
+                data = data0
+            else:
+                client = MongoClient(host='127.0.0.1', port=27017)
+                db = client.eleme  # 给数据库命名
+                collection = db.eleme_page
+                data = []
+                for item in collection.find({'score': {"$exists": 1}}):
+                    if (item['score'] != '暂无得分'):
+                        list = []
+                        list.append(item['shopid'])
+                        list.append(item['shopname'])
+                        list.append(item['score'])
+                        data.append(list)
+
+            data = pd.DataFrame(data, columns=['shopid', 'shopname', 'score'])
+            data_sort = data.sort_values(by='score', ascending=True)
+            top20 = data_sort.iloc[0:20]
+            #####加到下拉列表里
+            comb = []
+            for i in range(len(top20)):
+                comb.append(top20['shopname'].iloc[i] + ' ' + str(top20['shopid'].iloc[i]))
+            self.comboBox_bottom20.addItems(comb)
+            plt.figure(figsize=(8, 4))
+            plt.bar(np.arange(len(top20)), top20['score'])
+            plt.xticks(np.arange(len(top20)))
+            plt.xlabel('外卖店号')
+            plt.ylabel('安全得分')
+            for i in range(len(top20)):
+                sc = top20['score'].iloc[i]
+                sc1 = float('%.2f' % sc)
+                plt.text(21, 0.06 - i * 0.003, str(i) + ':  ' + top20['shopname'].iloc[i] + '  ' + str(sc1) + '分', color='red')
+            plt.savefig("image\\image0.png")
+            plt.show()
+            image_path = "image\\image0.png"
+            im = Image.open(image_path)
+
+            w_image = im.size[0]
+            h_image = im.size[1]
+            print(w_image)
+            print(h_image)
+            # self.label_image.setGeometry(QtCore.QRect((self.frame_display.width()-w_image) / 2, (self.frame_display.height()-h_image) / 2, w_image,h_image))
+            print("width" + str(self.frame_display.width()))
+            print("f_w" + str(self.frame_display.frameWidth()))
+            # self.label_image.resize(w_image*2,h_image*2)
+            # self.label_image.setStyleSheet("background-color: rgb(0, 255, 0);")
+            png = QtGui.QPixmap("image\\image0.png")
+            png.scaled(QSize(100, 100), Qt.KeepAspectRatio)
+            self.label_image.setPixmap(png)
+            self.label_image.setAlignment(Qt.AlignCenter)
+
+            self.tabWidget_display.setCurrentIndex(1)
+        except Exception as e:
+            QMessageBox.information(self.pushbutton_safe_analysis,"info",str(e))
+
+
+
+    #endregion
+
+    #region 显示数据设置界面
+    def data_setting_display(self):
+        self.frame_setting.setVisible(True)
+        self.scrollArea.setVisible(True)
+        self.tabWidget_settings.setCurrentIndex(0)
+    #endregion
+
+    #region 显示绘图设置界面
+    def plot_setting_display(self):
+        try:
+
+            self.frame_setting.setVisible(True)
+            self.scrollArea.setVisible(True)
+            self.tabWidget_settings.setCurrentIndex(1)
+        except Exception as e:
+            QMessageBox.information(self.pushbutton_safe_analysis,"info",str(e))
+    #endregion
+
+    #region 关闭设置页面
+    def close_setting_func(self):
+        try:
+            self.scrollArea.setVisible(False)
+        except Exception as e:
+            QMessageBox.information(self.pushbutton_safe_analysis,"info",str(e))
+    #endregion
+
+    #region 生成云词
+    def produce_cloud_map_func(self):
+        try:
+            # region 将字符串“None”设置为None
+            def none_cal(str):
+                if str == "None" or str == "":
+                    value = None
+                elif str == "True":
+                    value = True
+                elif str == "False":
+                    value = False
+                else:
+                    value = str
+                return value
+
+            # endregion
+            para={}
+
+            mask=none_cal(self.text_mask.currentText())
+            if mask!=None:
+                mask=imread(mask)
+            para["mask"]=mask
+            scale=none_cal(self.text_scale.currentText())
+            if scale!=None:
+                scale=int(scale)
+            para["scale"]=scale
+            max_words=none_cal(self.text_max_words.currentText())
+            if max_words!=None:
+                max_words=int(max_words)
+            para["max_words"]=max_words
+            min_font_size=none_cal(self.text_min_font_size.currentText())
+            if min_font_size!=None:
+                min_font_size=int(min_font_size)
+            para["min_font_size"]=min_font_size
+            max_font_size=none_cal(self.text_max_font_size.currentText())
+            if max_font_size!=None:
+                max_font_size=int(max_font_size)
+            para["max_font_size"]=max_font_size
+            background_color=self.text_background_color.currentText()
+            para["background_color"]=background_color
+            font_step=none_cal(self.text_font_step.currentText())
+            if font_step!=None:
+                font_step=int(font_step)
+            para["font_step"]=font_step
+            ####################################csv文件
+            if self.check_csv.isChecked():
+                data = pd.read_csv('data\eleme_comment.csv')
+                data_page= pd.read_csv('data\eleme_page.csv')
+                report_str=''
+                for d in range(len(data)):
+                    content=data['content'].iloc[d]
+                    shop_name=data_page['shopname'].iloc[d]
+                    str0 = []
+                    str1 = ''
+                    for i in range(len(content)):
+                        if content[i] == '\'':
+                            str0.append(str1)
+                            str1 = ''
+                        else:
+                            str1 += content[i]
+                    content=str0
+
+                    for i in range(len(content)):
+                        if (content[i]!='[') and (content[i]!=','):
+                            report_str += (content[i] + '\n')
+            #################################################数据库
+            else:
+                client = MongoClient(host='127.0.0.1', port=27017)
+                db = client.eleme  # 给数据库命名
+                collection = db.eleme_comment
+                report_str = ''
+                for item in collection.find():
+                    report_str += (str(item['content']) + '\n')
+
+            my_word_cloud=dal.word_cloud(report_str,para)
+
+            plt.figure(figsize=(5,4))
+            plt.imshow(my_word_cloud)
+            plt.axis("off")
+            plt.savefig("image\\image0.png")
+            plt.show()
+            ##########################
+            image_path = "image\\image0.png"
+            im = Image.open(image_path)
+            w_image = im.size[0]
+            h_image = im.size[1]
+            png = QtGui.QPixmap("image\\image0.png" )
+            png.scaled(QSize(100, 100), Qt.KeepAspectRatio)
+            self.label_image.setPixmap(png)
+            self.label_image.setAlignment(Qt.AlignCenter)
+            png = QtGui.QPixmap("image\\image0.png")
+            self.label_image.setPixmap(png)
+            self.tabWidget_display.setCurrentIndex(1)
+        except Exception as e:
+            QMessageBox.information(self.pushbutton_safe_analysis,"info",str(e))
+
+    #endregion
+
+    #region Top20生成云词
+    def cloud_top20(self):
+        try:
+            # region 将字符串“None”设置为None
+            def none_cal(str):
+                if str == "None" or str == "":
+                    value = None
+                elif str == "True":
+                    value = True
+                elif str == "False":
+                    value = False
+                else:
+                    value = str
+                return value
+
+            # endregion
+            para={}
+
+            mask=none_cal(self.text_mask.currentText())
+            if mask!=None:
+                mask=imread(mask)
+            para["mask"]=mask
+            scale=none_cal(self.text_scale.currentText())
+            if scale!=None:
+                scale=int(scale)
+            para["scale"]=scale
+            max_words=none_cal(self.text_max_words.currentText())
+            if max_words!=None:
+                max_words=int(max_words)
+            para["max_words"]=max_words
+            min_font_size=none_cal(self.text_min_font_size.currentText())
+            if min_font_size!=None:
+                min_font_size=int(min_font_size)
+            para["min_font_size"]=min_font_size
+            max_font_size=none_cal(self.text_max_font_size.currentText())
+            if max_font_size!=None:
+                max_font_size=int(max_font_size)
+            para["max_font_size"]=max_font_size
+            background_color=self.text_background_color.currentText()
+            para["background_color"]=background_color
+            font_step=none_cal(self.text_font_step.currentText())
+            if font_step!=None:
+                font_step=int(font_step)
+            para["font_step"]=font_step
+
+            shop_name = self.comboBox_top20.currentText()
+            shop_id = shop_name.split(' ')[-1]
+            if self.check_csv.isChecked():
+                data = pd.read_csv('data\eleme_comment.csv')
+                content = data[data['shopid'] == shop_id]['content'].iloc[0]
+                str0 = []
+                str1 = ''
+                for i in range(len(content)):
+                    if content[i] == '\'':
+                        str0.append(str1)
+                        str1 = ''
+                    else:
+                        str1 += content[i]
+                content=str0
+                report_str = ''
+                for i in range(len(content)):
+                    if (content[i] != '[') and (content[i] != ','):
+                        report_str +=content[i] + '\n'
+            else:
+                client = MongoClient(host='127.0.0.1', port=27017)
+                db = client.eleme  # 给数据库命名
+                collection = db.eleme_comment
+                content=[]
+                for item in collection.find({'shopid': shop_id}):
+                    content = item['content']
+                data = []
+                report_str = ''
+                for i in range(len(content)):
+                    report_str += content[i] + '\n'
+            print('云词')
+            print(report_str)
+
+            my_word_cloud=dal.word_cloud(report_str,para)
+
+            plt.figure(figsize=(5,4))
+            plt.imshow(my_word_cloud)
+            plt.axis("off")
+            plt.savefig("image\\image0.png")
+            plt.show()
+            ##########################
+            image_path = "image\\image0.png"
+            im = Image.open(image_path)
+            w_image = im.size[0]
+            h_image = im.size[1]
+            png = QtGui.QPixmap("image\\image0.png" )
+            png.scaled(QSize(100, 100), Qt.KeepAspectRatio)
+            self.label_image.setPixmap(png)
+            self.label_image.setAlignment(Qt.AlignCenter)
+            png = QtGui.QPixmap("image\\image0.png")
+            self.label_image.setPixmap(png)
+            self.tabWidget_display.setCurrentIndex(1)
+        except Exception as e:
+            QMessageBox.information(self.pushbutton_safe_analysis,"info",str(e))
+
+    #endregion
+
+    #region Bottom20生成云词
+    def cloud_bottom20(self):
+        try:
+            # region 将字符串“None”设置为None
+            def none_cal(str):
+                if str == "None" or str == "":
+                    value = None
+                elif str == "True":
+                    value = True
+                elif str == "False":
+                    value = False
+                else:
+                    value = str
+                return value
+
+            # endregion
+            para={}
+
+            mask=none_cal(self.text_mask.currentText())
+            if mask!=None:
+                mask=imread(mask)
+            para["mask"]=mask
+            scale=none_cal(self.text_scale.currentText())
+            if scale!=None:
+                scale=int(scale)
+            para["scale"]=scale
+            max_words=none_cal(self.text_max_words.currentText())
+            if max_words!=None:
+                max_words=int(max_words)
+            para["max_words"]=max_words
+            min_font_size=none_cal(self.text_min_font_size.currentText())
+            if min_font_size!=None:
+                min_font_size=int(min_font_size)
+            para["min_font_size"]=min_font_size
+            max_font_size=none_cal(self.text_max_font_size.currentText())
+            if max_font_size!=None:
+                max_font_size=int(max_font_size)
+            para["max_font_size"]=max_font_size
+            background_color=self.text_background_color.currentText()
+            para["background_color"]=background_color
+            font_step=none_cal(self.text_font_step.currentText())
+            if font_step!=None:
+                font_step=int(font_step)
+            para["font_step"]=font_step
+
+            shop_name = self.comboBox_bottom20.currentText()
+            shop_id = shop_name.split(' ')[-1]
+            if self.check_csv.isChecked():
+                data = pd.read_csv('data\eleme_comment.csv')
+                content = data[data['shopid'] == shop_id]['content'].iloc[0]
+                str0 = []
+                str1 = ''
+                for i in range(len(content)):
+                    if content[i] == '\'':
+                        str0.append(str1)
+                        str1 = ''
+                    else:
+                        str1 += content[i]
+                content=str0
+                report_str = ''
+                for i in range(len(content)):
+                    if (content[i] != '[') and (content[i] != ','):
+                        report_str +=content[i] + '\n'
+            else:
+                client = MongoClient(host='127.0.0.1', port=27017)
+                db = client.eleme  # 给数据库命名
+                collection = db.eleme_comment
+                content=[]
+                for item in collection.find({'shopid': shop_id}):
+                    content = item['content']
+                data = []
+                report_str = ''
+                for i in range(len(content)):
+                    report_str += content[i] + '\n'
+
+            my_word_cloud=dal.word_cloud(report_str,para)
+
+            plt.figure(figsize=(5,4))
+            plt.imshow(my_word_cloud)
+            plt.axis("off")
+            plt.savefig("image\\image0.png")
+            plt.show()
+            ##########################
+            image_path = "image\\image0.png"
+            im = Image.open(image_path)
+            w_image = im.size[0]
+            h_image = im.size[1]
+            png = QtGui.QPixmap("image\\image0.png" )
+            png.scaled(QSize(100, 100), Qt.KeepAspectRatio)
+            self.label_image.setPixmap(png)
+            self.label_image.setAlignment(Qt.AlignCenter)
+            png = QtGui.QPixmap("image\\image0.png")
+            self.label_image.setPixmap(png)
+            self.tabWidget_display.setCurrentIndex(1)
+        except Exception as e:
+            QMessageBox.information(self.pushbutton_safe_analysis,"info",str(e))
+
+    #endregion
+
+
+
+
+
+
+
+
+
+
+
+
+
